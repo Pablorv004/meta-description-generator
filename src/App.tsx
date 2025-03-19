@@ -7,6 +7,12 @@ import { SearchableCombobox } from "./components/SearchableCombobox"
 import { StatusMessage } from "./components/StatusMessage"
 import "./App.css"
 
+/**
+ * @author Pablo Rodriguez @ Screenful
+ * @version 1.0.0
+ * @description This plugin generates SEO-friendly meta descriptions for your collection items using AI.
+ * Check README for further instructions.
+ */
 framer.showUI({
     position: "top right",
     width: 300,

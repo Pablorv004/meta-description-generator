@@ -35,6 +35,7 @@ export async function generateMetaDescription(
             2. Be engaging and informative
             3. Include a subtle mention of Screenful (the company behind the website)
             4. Not exceed 160 characters
+            5. Avoid exclamation marks and consider formality
             
             Return only the meta description text without any additional explanation.
         `;

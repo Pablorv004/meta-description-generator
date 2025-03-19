@@ -50,7 +50,7 @@ pnpm dev
 bun dev
 ```
 
-## Building and Packaging
+## Building and Packaging (Optional, for Marketplace Submission)
 
 Build the plugin for production:
 
@@ -70,9 +70,9 @@ yarn pack
 
 ## How to Use
 
-1. Install the plugin in your Framer project
-2. Open the plugin from the right-hand panel
-3. Select a collection from the dropdown menu
+1. In Framer, open the context menu. Head for plugins -> Show Developer Tools.
+2. Open the plugin from the top panel
+3. Select "Open Development Plugin..." while in CMS mode
 4. Choose how you want to generate meta descriptions:
    - "All (Add Missing)" - Only adds meta descriptions to items without one
    - "All (Rewrite All)" - Regenerates meta descriptions for all items
