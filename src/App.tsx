@@ -1,7 +1,7 @@
 import { framer } from "framer-plugin"
 import { useState, useEffect, useMemo } from "react"
 import { useCollections } from "./hooks/useCollections"
-import { generateMetaDescription, CollectionItem } from "./services/metaDescriptionService"
+import { optimizeTitle, CollectionItem } from "./services/titleOptimizationService"
 import { formatSlug } from "./utils"
 import { SearchableCombobox } from "./components/SearchableCombobox"
 import { StatusMessage } from "./components/StatusMessage"
@@ -10,7 +10,7 @@ import "./App.css"
 /**
  * @author Pablo Rodriguez @ Screenful
  * @version 1.0.0
- * @description This plugin generates SEO-friendly meta descriptions for your collection items using AI.
+ * @description This plugin optimizes titles for your collection items using AI.
  * Check README for further instructions.
  */
 framer.showUI({
@@ -43,11 +43,11 @@ export function App() {
         return [
             {
                 value: "all",
-                label: "All (Add Missing)"
+                label: "All (Optimize Long Titles)"
             },
             {
                 value: "rewriteAll",
-                label: "All (Rewrite All)"
+                label: "All (Optimize All Titles)"
             },
             ...collectionItems.map(item => ({
                 value: item.id,
@@ -72,7 +72,7 @@ export function App() {
                 setCollectionItems([]);
             }
         };
-        
+
         loadCollectionItems();
     }, [activeCollection]);
 
@@ -82,7 +82,7 @@ export function App() {
         }
     }
 
-    const handleAddMetaDescriptions = async () => {
+    const handleOptimizeTitles = async () => {
         if (!activeCollection) return
 
         try {
@@ -92,75 +92,64 @@ export function App() {
 
             // Get collection items
             const items = await activeCollection.getItems()
-            
+
             // Determine which items to process based on selection
-            const itemsToProcess = selectedItemId === "all" || selectedItemId === "rewriteAll" 
-                ? items 
+            const itemsToProcess = selectedItemId === "all" || selectedItemId === "rewriteAll"
+                ? items
                 : items.filter(item => item.id === selectedItemId);
-                
+
             setTotalItems(itemsToProcess.length)
             setCompletedItems(0)
 
-            // Check if MetaDescription field exists, if not create it
+            // Find the Title field ID
             const fields = await activeCollection.getFields()
-            let metaDescFieldId: string | null = null
-            
-            // Try to find existing MetaDescription field
-            const existingMetaDescField = fields.find(field => field.name === "MetaDescription")
-            if (existingMetaDescField) {
-                metaDescFieldId = existingMetaDescField.id
-            } else {
-                // Create the MetaDescription field since it doesn't exist
-                try {
-                    await activeCollection.addFields([{
-                        name: "MetaDescription",
-                        type: "string"
-                    }]);
-                    console.log("Created MetaDescription field");
-                } catch (error) {
-                    console.error("Error creating MetaDescription field:", error);
-                    throw new Error("Failed to create MetaDescription field");
-                }
-                
-                // Get the fields again to find our newly created field
-                const updatedFields = await activeCollection.getFields()
-                metaDescFieldId = updatedFields.find(field => field.name === "MetaDescription")?.id || null
+            const titleField = fields.find(field => field.name === "Title")
+
+            if (!titleField) {
+                throw new Error("Could not find Title field in this collection")
             }
-            
-            if (!metaDescFieldId) {
-                throw new Error("Could not find or create MetaDescription field")
-            }
+
+            const titleFieldId = titleField.id
 
             // Process each item
             let updatedCount = 0
 
             for (const item of itemsToProcess) {
                 try {
-                    // Check if the item has a MetaDescription value using the field ID
+                    // Get the current title from field data
                     const fieldData = item.fieldData
-                    
+                    const currentTitle = fieldData[titleFieldId]?.value as string || ""
+
                     // Determine whether to update this item
-                    if (selectedItemId !== "all" || 
-                        (selectedItemId === "all" && (!fieldData[metaDescFieldId] || !fieldData[metaDescFieldId].value))) {
-                        // Generate AI meta description
-                        const metaDescription = await generateMetaDescription(
-                            item, 
-                            fieldData, 
-                            setIsPaused, 
+                    const titleIsTooLong = currentTitle.length > 70
+
+                    if (selectedItemId === "rewriteAll" ||
+                        selectedItemId !== "all" ||
+                        (selectedItemId === "all" && titleIsTooLong)) {
+
+                        // Generate optimized title
+                        const optimizedTitle = await optimizeTitle(
+                            item,
+                            fieldData,
+                            titleFieldId,
+                            setIsPaused,
                             setStatus
                         );
-                        
-                        const fieldUpdate: { [key: string]: { type: "string", value: string } } = {}
-                        fieldUpdate[metaDescFieldId] = {
-                            type: "string",
-                            value: metaDescription
+
+                        // Only update if the title actually changed
+                        if (optimizedTitle !== currentTitle) {
+                            const fieldUpdate: { [key: string]: { type: "string", value: string } } = {}
+                            fieldUpdate[titleFieldId] = {
+                                type: "string",
+                                value: optimizedTitle
+                            }
+
+                            await item.setAttributes({
+                                slug: item.slug,
+                                fieldData: fieldUpdate
+                            });
+                            updatedCount++
                         }
-                        
-                        await item.setAttributes({
-                            slug: item.slug,
-                            fieldData: fieldUpdate
-                        });
-                        updatedCount++
                     }
                 } catch (error) {
                     // Check if this is our specific rate limit error
@@ -172,29 +161,29 @@ export function App() {
                         });
                         return; // Exit the function early
                     }
-                    
+
                     // For other errors, log but continue with other items
                     console.error(`Error processing item ${item.slug}:`, error);
                 }
 
                 setCompletedItems(prev => prev + 1)
             }
-            
+
             // Show success message
             setStatus({
                 success: true,
                 message: selectedItemId === "all"
-                    ? `Updated ${updatedCount} of ${itemsToProcess.length} items with missing meta descriptions.`
+                    ? `Optimized ${updatedCount} of ${itemsToProcess.length} items with titles over 70 characters.`
                     : selectedItemId === "rewriteAll"
-                        ? `Successfully rewrote meta descriptions for all ${updatedCount} items.`
-                        : `Successfully rewrote meta description for the selected item.`
+                        ? `Successfully optimized titles for all ${updatedCount} items.`
+                        : `Successfully optimized title for the selected item.`
             })
 
         } catch (error) {
-            console.error("Error adding meta descriptions:", error)
+            console.error("Error optimizing titles:", error)
             setStatus({
                 success: false,
-                message: error instanceof Error ? error.message : "An error occurred while processing meta descriptions."
+                message: error instanceof Error ? error.message : "An error occurred while optimizing titles."
             })
         } finally {
             setIsProcessing(false)
@@ -206,14 +195,14 @@ export function App() {
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             const target = event.target as HTMLElement;
-            
+
             if (openComboboxId !== null && !target.closest('.searchable-combobox')) {
                 setOpenComboboxId(null);
             }
         };
 
         document.addEventListener('mousedown', handleClickOutside);
-        
+
         return () => {
             document.removeEventListener('mousedown', handleClickOutside);
         };
@@ -222,17 +211,18 @@ export function App() {
     return (
         <main className="meta-desc-plugin">
             <div className="title-container">
-                <h2>Meta Description Generator</h2>
+                <h2>Title Optimizer</h2>
                 <div className="tooltip-container">
                     <span className="help-icon">?</span>
                     <div className="tooltip-content">
                         <p><strong>How to use:</strong></p>
                         <ol>
                             <li>Select a collection from the first dropdown</li>
-                            <li>In the next dropdown, choose "All" to add or rewrite missing meta descriptions or select a specific item to rewrite</li>
-                            <li>Click the button to generate meta descriptions</li>
+                            <li>In the next dropdown, choose "All (Optimize Long Titles)" to optimize only titles that exceed 70 characters,
+                                "All (Optimize All Titles)" to optimize all titles, or select a specific item</li>
+                            <li>Click the button to optimize titles</li>
                         </ol>
-                        <p>This plugin uses AI to generate SEO-friendly meta descriptions that include a mention of Screenful.</p>
+                        <p>This plugin uses AI to optimize titles to be under 70 characters while preserving key words and meaning.</p>
                         <p><strong>Note:</strong> If rate limits are reached, the process will automatically pause and retry after 60 seconds.</p>
                     </div>
                 </div>
@@ -270,15 +260,15 @@ export function App() {
 
             <button
                 className={`action-button ${!activeCollection ? 'disabled' : ''}`}
-                onClick={handleAddMetaDescriptions}
+                onClick={handleOptimizeTitles}
                 disabled={!activeCollection || isProcessing}
             >
                 {isProcessing ? 'Processing...' : (
-                    selectedItemId === "all" 
-                        ? 'Add Missing Meta Descriptions' 
+                    selectedItemId === "all"
+                        ? 'Optimize Long Titles'
                         : selectedItemId === "rewriteAll"
-                            ? 'Rewrite All Meta Descriptions'
-                            : 'Rewrite Meta Description'
+                            ? 'Optimize All Titles'
+                            : 'Optimize Title'
                 )}
             </button>
 
